@@ -31,7 +31,7 @@ chrome_options.add_experimental_option("prefs", {
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-# Allow downloads in Headless mode via CDP
+# Enable CDP download command for headless environment
 driver.execute_cdp_cmd(
     "Page.setDownloadBehavior",
     {"behavior": "allow", "downloadPath": DOWNLOAD_DIR}
@@ -47,14 +47,11 @@ try:
     # 1. TRIGGER DOWNLOAD TO OPEN MATH CAPTCHA MODAL
     # -------------------------------------------------------------
     print("Locating latest results row (Row 1)...")
-    first_row = wait.until(EC.presence_of_element_located(
-        (By.XPATH, "//table/tbody/tr[1]")
-    ))
+    first_row = wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody/tr[1]")))
     
     draw_name = first_row.find_element(By.XPATH, "./td[2]").text.strip()
     print(f"Targeting latest result: {draw_name}")
     
-    # Click initial Download button to trigger the modal
     download_btn = first_row.find_element(
         By.XPATH, ".//a[contains(translate(text(), 'DOWNLOAD', 'download'), 'download')] | .//button[contains(translate(text(), 'DOWNLOAD', 'download'), 'download')]"
     )
@@ -67,14 +64,10 @@ try:
     input_box = wait.until(EC.visibility_of_element_located(
         (By.XPATH, "//input[contains(translate(@placeholder, 'ANSWER', 'answer'), 'answer') or @type='number' or @type='text']")
     ))
-    print("Math CAPTCHA input field detected.")
 
-    # Grab equation text from modal
     modal_element = driver.find_element(By.XPATH, "//div[contains(@class, 'modal')] | //body")
     modal_text = modal_element.text
-    print(f"Modal text captured: {modal_text}")
 
-    # Extract numbers and operator (e.g. 2 * 10)
     match = re.search(r'(\d+)\s*([\+\-\*\/xX])\s*(\d+)', modal_text)
     if match:
         num1, op, num2 = int(match.group(1)), match.group(2), int(match.group(3))
@@ -86,7 +79,6 @@ try:
     else:
         raise ValueError(f"Unable to extract math expression from modal: {modal_text}")
 
-    # Input answer and submit form
     input_box.clear()
     input_box.send_keys(str(result))
     
@@ -94,13 +86,13 @@ try:
         By.XPATH, "//button[contains(translate(text(), 'SUBMIT', 'submit'), 'submit') or @type='submit']"
     )
     submit_btn.click()
-    print("Captcha answer submitted. File download started...")
+    print("Captcha submitted. Waiting for real PDF file...")
 
     # -------------------------------------------------------------
-    # 3. VERIFY AND RENAME PDF
+    # 3. VERIFY VALID PDF BINARY AND RENAME
     # -------------------------------------------------------------
     download_timeout = 30
-    downloaded_file = None
+    valid_pdf_path = None
     start_time = time.time()
     
     while time.time() - start_time < download_timeout:
@@ -111,21 +103,31 @@ try:
             and not f.endswith('.tmp') 
             and f != "error_screenshot.png"
         ]
-        if completed_files:
-            downloaded_file = completed_files[0]
+        
+        for candidate in completed_files:
+            file_path = os.path.join(DOWNLOAD_DIR, candidate)
+            # Ensure file is greater than 10 KB and starts with PDF magic header bytes
+            if os.path.getsize(file_path) > 10240:
+                with open(file_path, "rb") as f:
+                    header = f.read(4)
+                    if header == b"%PDF":
+                        valid_pdf_path = file_path
+                        break
+        if valid_pdf_path:
             break
         time.sleep(1)
 
-    if downloaded_file:
-        old_path = os.path.join(DOWNLOAD_DIR, downloaded_file)
+    if valid_pdf_path:
         safe_draw_name = re.sub(r'[\\/*?:"<>|]', '-', draw_name)
         clean_name = f"{safe_draw_name}.pdf"
         new_path = os.path.join(DOWNLOAD_DIR, clean_name)
         
-        os.rename(old_path, new_path)
-        print(f"Successfully downloaded and saved: {new_path}")
+        if valid_pdf_path != new_path:
+            os.rename(valid_pdf_path, new_path)
+            
+        print(f"Valid PDF verified and saved to: {new_path}")
     else:
-        raise Exception("Download failed: No completed PDF found in download directory.")
+        raise Exception("Download failed: File is invalid, corrupted, or less than expected PDF size.")
 
 except Exception as error:
     print(f"Automation error: {str(error)}")
@@ -133,4 +135,6 @@ except Exception as error:
     raise error
 
 finally:
+    # Give browser process a moment before terminating context
+    time.sleep(2)
     driver.quit()

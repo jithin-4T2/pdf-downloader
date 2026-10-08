@@ -1,5 +1,7 @@
+python
 import os
 import time
+import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -28,33 +30,29 @@ chrome_options.add_experimental_option("prefs", {
 })
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+wait = WebDriverWait(driver, 20)
 
 try:
     print("Connecting to the Kerala LOTIS portal...")
     driver.get(TARGET_URL)
-    time.sleep(10)  # Wait for page elements to load
     
-    # 1. DETECT AND AUTOMATICALLY SOLVE THE MATH CAPTCHA POP-UP
-    print("Checking for math equation verification pop-up...")
-    
-    # Search for text elements containing typical equation indicator structures
-    equation_elements = driver.find_elements(By.XPATH, "//*[contains(text(), '*') or contains(text(), '+') or contains(text(), '-')]")
-    
-    # Target the modal specific elements visible in your screenshot
-    modal_present = driver.find_elements(By.XPATH, "//*[contains(text(), 'solve the equation')]")
-    
-    if modal_present:
-        print("Math CAPTCHA pop-up confirmed active.")
+    # 1. WAIT FOR AND SOLVE THE MATH CAPTCHA POP-UP
+    print("Waiting for math equation verification pop-up to render...")
+    try:
+        # Wait up to 10 seconds for the input field to become visible
+        input_box = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@placeholder, 'answer')] | //input[@type='number']")))
+        print("Math CAPTCHA pop-up detected successfully.")
         
-        # Isolate the exact equation text string element dynamically
-        # Finds the text node sitting right above the text input field box
-        equation_text = driver.find_element(By.XPATH, "//input[@placeholder='Enter your answer']/preceding-sibling::* | //input/parent::div/preceding-sibling::*").text
+        # Locate the math equation text node relative to the input field box
+        # Using a reliable relative path to grab the mathematical expression text block
+        equation_element = driver.find_element(By.XPATH, "//input[contains(@placeholder, 'answer')]/parent::div/preceding-sibling::div | //*[contains(text(), '* ') or contains(text(), ' + ') or contains(text(), ' - ')]")
+        equation_text = equation_element.text.strip()
         
-        # Cleanup string formatting spaces or cross symbols if present
+        # Clean string formatting characters
         clean_equation = equation_text.replace(' ', '').replace('x', '*').strip()
-        print(f"Extracted equation text from page layout: {clean_equation}")
+        print(f"Extracted math puzzle text: {clean_equation}")
         
-        # Safely evaluate the arithmetic math problem mathematically
+        # Dynamically evaluate the math operations
         if '*' in clean_equation:
             num1, num2 = clean_equation.split('*')
             result = int(num1) * int(num2)
@@ -65,43 +63,48 @@ try:
             num1, num2 = clean_equation.split('-')
             result = int(num1) - int(num2)
         else:
-            raise Exception(f"Unable to parse custom math structure format: {clean_equation}")
+            # Fallback evaluation parser if equation formatting changes slightly
+            result = eval(clean_equation)
             
-        print(f"Calculated arithmetic verification response: {result}")
+        print(f"Calculated arithmetic target solution response: {result}")
         
-        # Enter target evaluation numeric string into the input elements box
-        input_box = driver.find_element(By.XPATH, "//input[@placeholder='Enter your answer'] | //input[@type='number']")
+        # Type answer token string value directly into the input target box
         input_box.send_keys(str(result))
         time.sleep(1)
         
-        # Locate the action trigger Submit element button and click it to unlock layout rows
-        submit_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Submit')] | //input[@value='Submit']")
+        # Locate the action trigger Submit element button and click it to dismiss the modal
+        submit_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Submit')] | //input[@value='Submit'] | //*[contains(@class, 'submit') or contains(@type, 'submit')]")
         submit_btn.click()
-        print("Math solution successfully provided. Waiting for page validation refresh...")
+        print("Math response submitted. Waiting for validation verification...")
         time.sleep(5)
+        
+    except Exception as modal_error:
+        print(f"Modal validation bypass check pass or skipped: {str(modal_error)}")
 
     # 2. ISOLATE DOWNLOAD MECHANICS TARGETS
     print("Locating target results data table rows...")
-    wait = WebDriverWait(driver, 35)
     
+    # Target the first structural table row element item cleanly
     first_row = wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody/tr")))
     
-    # Safely pull description string from the second data cell column location
-    draw_name = first_row.find_element(By.XPATH, "./td").text
+    # Safely pull description string from the second data cell column location to rename cleanly
+    # (Extracting text column cell context to avoid blank index strings)
+    cells = first_row.find_elements(By.XPATH, "./td")
+    draw_name = cells[1].text if len(cells) > 1 else cells[0].text
     print(f"Targeting active published document title: {draw_name}")
     
     download_link = first_row.find_element(By.XPATH, ".//a[contains(text(), 'Download')]")
     
     driver.execute_script("arguments.click();", download_link)
-    print("Download action deployed. Streaming PDF onto background workspace layout folder...")
+    print("Download action deployed. Streaming PDF content...")
     time.sleep(25)
 
-    # 3. VERIFY DISK DIRECTORY ASSETS
+    # 3. VERIFY OUTPUT DIRECTORY FILES
     downloaded_files = os.listdir(DOWNLOAD_DIR)
     valid_files = [f for f in downloaded_files if not f.endswith('.crdownload') and f != "error_screenshot.png"]
     
     if valid_files:
-        filename = valid_files
+        filename = valid_files[0]
         old_path = os.path.join(DOWNLOAD_DIR, filename)
         clean_name = f"{draw_name.replace('/', '-')}.pdf"
         new_path = os.path.join(DOWNLOAD_DIR, clean_name)
@@ -109,7 +112,7 @@ try:
         os.rename(old_path, new_path)
         print(f"Asset synchronized completely: {clean_name}")
     else:
-        raise Exception("Directory validation step failure. Chrome returned blank output fields.")
+        raise Exception("Directory validation step failure. Chrome workspace returned zero values.")
 
 except Exception as error:
     print(f"Automation block event hit: {str(error)}")

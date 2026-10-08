@@ -2,7 +2,8 @@ name: Kerala Lottery Direct Repository Saver
 
 on:
   schedule:
-    - cron: '0 11 * * *'
+    # 4:40 PM IST corresponds to 11:10 AM UTC (Cron format: minute hour day month day-of-week)
+    - cron: '10 11 * * *'
   workflow_dispatch:
 
 jobs:
@@ -33,7 +34,7 @@ jobs:
         git config --global user.name "GitHub Action Bot"
         git config --global user.email "actions@github.com"
         
-        # Add files safely even if an operational layout debug snapshot is captured
+        # Add downloaded PDF results
         git add lottery_results/*
         
         if git diff --staged --quiet; then

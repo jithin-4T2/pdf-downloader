@@ -31,7 +31,7 @@ chrome_options.add_experimental_option("prefs", {
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-# Enable CDP download command for headless environment
+# Enable CDP download behavior for headless Chrome
 driver.execute_cdp_cmd(
     "Page.setDownloadBehavior",
     {"behavior": "allow", "downloadPath": DOWNLOAD_DIR}
@@ -59,15 +59,23 @@ try:
     print("Download button clicked. Waiting for math CAPTCHA modal...")
 
     # -------------------------------------------------------------
-    # 2. DETECT AND SOLVE MATH CAPTCHA
+    # 2. ISOLATE MODAL & SOLVE CAPTCHA EXCLUSIVELY
     # -------------------------------------------------------------
-    input_box = wait.until(EC.visibility_of_element_located(
-        (By.XPATH, "//input[contains(translate(@placeholder, 'ANSWER', 'answer'), 'answer') or @type='number' or @type='text']")
+    # Wait for the modal dialog to be visible
+    modal_dialog = wait.until(EC.visibility_of_element_located(
+        (By.XPATH, "//div[contains(@class, 'modal-content') or contains(@class, 'modal-dialog') or @role='dialog']")
     ))
+    
+    input_box = modal_dialog.find_element(
+        By.XPATH, ".//input[contains(translate(@placeholder, 'ANSWER', 'answer'), 'answer') or @type='number' or @type='text']"
+    )
 
-    modal_element = driver.find_element(By.XPATH, "//div[contains(@class, 'modal')] | //body")
-    modal_text = modal_element.text
+    # Extract text exclusively from the modal element
+    modal_text = modal_dialog.text
+    print(f"Modal content isolated: {repr(modal_text)}")
 
+    # Extract numbers and operator specifically from the equation line (e.g., '2 * 10' or '15 + 4')
+    # Reject dates or draw number patterns by enforcing a strict math equation regex
     match = re.search(r'(\d+)\s*([\+\-\*\/xX])\s*(\d+)', modal_text)
     if match:
         num1, op, num2 = int(match.group(1)), match.group(2), int(match.group(3))
@@ -75,21 +83,22 @@ try:
         elif op == '+': result = num1 + num2
         elif op == '-': result = num1 - num2
         elif op == '/': result = num1 // num2
-        print(f"Solved equation: {num1} {op} {num2} = {result}")
+        print(f"Correctly extracted equation: {num1} {op} {num2} = {result}")
     else:
-        raise ValueError(f"Unable to extract math expression from modal: {modal_text}")
+        raise ValueError(f"Could not parse valid math equation from modal content: {modal_text}")
 
+    # Enter answer and submit inside modal context
     input_box.clear()
     input_box.send_keys(str(result))
     
-    submit_btn = driver.find_element(
-        By.XPATH, "//button[contains(translate(text(), 'SUBMIT', 'submit'), 'submit') or @type='submit']"
+    submit_btn = modal_dialog.find_element(
+        By.XPATH, ".//button[contains(translate(text(), 'SUBMIT', 'submit'), 'submit') or @type='submit']"
     )
     submit_btn.click()
-    print("Captcha submitted. Waiting for real PDF file...")
+    print("Correct Captcha answer submitted. Awaiting PDF stream...")
 
     # -------------------------------------------------------------
-    # 3. VERIFY VALID PDF BINARY AND RENAME
+    # 3. VERIFY AND SAVE VALID PDF
     # -------------------------------------------------------------
     download_timeout = 30
     valid_pdf_path = None
@@ -106,11 +115,10 @@ try:
         
         for candidate in completed_files:
             file_path = os.path.join(DOWNLOAD_DIR, candidate)
-            # Ensure file is greater than 10 KB and starts with PDF magic header bytes
+            # Verify valid PDF signature (%PDF header) and non-trivial size (> 10KB)
             if os.path.getsize(file_path) > 10240:
                 with open(file_path, "rb") as f:
-                    header = f.read(4)
-                    if header == b"%PDF":
+                    if f.read(4) == b"%PDF":
                         valid_pdf_path = file_path
                         break
         if valid_pdf_path:
@@ -125,9 +133,9 @@ try:
         if valid_pdf_path != new_path:
             os.rename(valid_pdf_path, new_path)
             
-        print(f"Valid PDF verified and saved to: {new_path}")
+        print(f"PDF verified and successfully saved to: {new_path}")
     else:
-        raise Exception("Download failed: File is invalid, corrupted, or less than expected PDF size.")
+        raise Exception("Download failed: PDF was not received or corrupted.")
 
 except Exception as error:
     print(f"Automation error: {str(error)}")
@@ -135,6 +143,5 @@ except Exception as error:
     raise error
 
 finally:
-    # Give browser process a moment before terminating context
     time.sleep(2)
     driver.quit()

@@ -8,11 +8,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-# --- SECURE CREDENTIALS FROM GITHUB SECRETS ---
+# --- SECURE API TOKENS FROM SECRETS ENV ---
 TRUE_USER = os.environ.get("4t2industries@gmail.com")
 TRUE_KEY = os.environ.get("zNpEm0GDWNlWBhSxYDsZ")
 
-TARGET_URL = "https://kerala.gov.in"
+TARGET_URL = "https://www.lotteryagent.kerala.gov.in/result/public/"
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "lottery_results")
 
 if not os.path.exists(DOWNLOAD_DIR):
@@ -24,7 +24,6 @@ chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--window-size=1920,1080")
 
-# Set up browser settings to automatically download PDFs instead of opening them
 chrome_options.add_experimental_option("prefs", {
     "download.default_directory": DOWNLOAD_DIR,
     "download.prompt_for_download": False,
@@ -38,14 +37,14 @@ driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), opti
 try:
     print("Connecting to the Kerala LOTIS portal...")
     driver.get(TARGET_URL)
-    time.sleep(12)  # Give the web page layout plenty of time to populate
+    time.sleep(12)
     
-    # 1. OPTIONAL DEFENSTIVE CAPTCHA CHECKER
+    # 1. DYNAMIC CAPTCHA INTERACTION LAYER
     captcha_frames = driver.find_elements(By.XPATH, "//iframe[contains(@src, 'recaptcha')]")
     captcha_containers = driver.find_elements(By.CLASS_NAME, "g-recaptcha")
     
     if captcha_frames or captcha_containers:
-        print("CAPTCHA wall found! Communicating with TrueCaptcha bypass engine...")
+        print("CAPTCHA grid layout detected. Querying TrueCaptcha API credentials...")
         site_key = captcha_containers.get_attribute("data-sitekey") if captcha_containers else captcha_frames.get_attribute("src").split("k=").split("&")
         
         captcha_payload = {
@@ -62,29 +61,28 @@ try:
                 verify_btn.click()
                 time.sleep(6)
     else:
-        print("No dynamic CAPTCHA blocking present. Moving to core table parsing routine...")
+        print("No dynamic verification screen found. Accessing dynamic table rows directly...")
 
-    # 2. ISOLATE TARGET ROW ELEMENT STABLY
-    print("Locating target data frames...")
+    # 2. RUN EXTRACTION AGAINST TARGET DATA COLUMNS DEFINED BY TARGET XPATH
+    print("Parsing table entries...")
     wait = WebDriverWait(driver, 35)
     
-    # FIX: Corrected the broken XPath syntax by closing it properly
-    first_row_xpath = "//table/tbody/tr[1]"
-    first_row = wait.until(EC.presence_of_element_located((By.XPATH, first_row_xpath)))
+    # Secure the explicit first data entry row element block container safely
+    first_row = wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody/tr[1]")))
     
-    # Extract the descriptive name (from the 2nd column cell item)
-    draw_name = first_row.find_element(By.XPATH, "./td").text
+    # FIX: Point explicitly to the SECOND column cell (td[2]) to capture the Draw details string name
+    draw_name = first_row.find_element(By.XPATH, "./td[2]").text
     print(f"Targeting active published document title: {draw_name}")
     
-    # Locate the Download link within this top row
+    # Target the download interactive link item safely relative inside this row block
     download_link = first_row.find_element(By.XPATH, ".//a[contains(text(), 'Download')]")
     
-    # Use JavaScript click to reliably trigger the browser's download event
+    # Trigger interaction sequence via native JavaScript execute commands
     driver.execute_script("arguments.click();", download_link)
-    print("Download action deployed. Streaming PDF content directly onto server disk...")
+    print("Download action deployed. Streaming PDF onto background storage directory...")
     time.sleep(25)
 
-    # 3. VERIFY OUTPUT DIRECTORY FILES
+    # 3. LOCATE TARGET AND RENAME
     downloaded_files = os.listdir(DOWNLOAD_DIR)
     valid_files = [f for f in downloaded_files if not f.endswith('.crdownload') and f != "error_screenshot.png"]
     
@@ -92,14 +90,14 @@ try:
         filename = valid_files
         old_path = os.path.join(DOWNLOAD_DIR, filename)
         
-        # Format the file name cleanly (e.g., replacing slashes)
+        # Clean formatting expression to remove unsafe file special separator symbols
         clean_name = f"{draw_name.replace('/', '-')}.pdf"
         new_path = os.path.join(DOWNLOAD_DIR, clean_name)
         
         os.rename(old_path, new_path)
         print(f"Asset synchronized completely: {clean_name}")
     else:
-        raise Exception("Chrome directory verification step failure. Target write returned zero values.")
+        raise Exception("Directory validation step failure. Chrome returned blank output fields.")
 
 except Exception as error:
     print(f"Automation block event hit: {str(error)}")

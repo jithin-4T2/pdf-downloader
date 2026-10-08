@@ -12,7 +12,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 TRUE_USER = os.environ.get("4t2industries@gmail.com")
 TRUE_KEY = os.environ.get("zNpEm0GDWNlWBhSxYDsZ")
 
-TARGET_URL = "https://www.lotteryagent.kerala.gov.in/result/public/"
+TARGET_URL = "https://kerala.gov.in"
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "lottery_results")
 
 if not os.path.exists(DOWNLOAD_DIR):
@@ -23,11 +23,14 @@ chrome_options.add_argument("--headless=new")
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--window-size=1920,1080")
+
+# Strict preferences to force background downloading of PDF links on cloud runners
 chrome_options.add_experimental_option("prefs", {
     "download.default_directory": DOWNLOAD_DIR,
     "download.prompt_for_download": False,
     "download.directory_upgrade": True,
-    "plugins.always_open_pdf_externally": True
+    "plugins.always_open_pdf_externally": True,
+    "pdfjs.disabled": True
 })
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
@@ -35,81 +38,63 @@ driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), opti
 try:
     print("Connecting to the Kerala LOTIS portal...")
     driver.get(TARGET_URL)
-    time.sleep(7)  # Give the page initial time to load frames
+    time.sleep(8)  # Give full frame rendering time
     
-    # 1. CHECK IF A CAPTCHA BOX IS BLOCKING THE CONTENT
-    # Looking for Google reCAPTCHA frames or containers
+    # 1. CAPTCHA DETECTOR CHECK
     captcha_frames = driver.find_elements(By.XPATH, "//iframe[contains(@src, 'recaptcha')]")
     captcha_containers = driver.find_elements(By.CLASS_NAME, "g-recaptcha")
     
     if captcha_frames or captcha_containers:
-        print("CAPTCHA wall detected! Extracting target data...")
+        print("CAPTCHA detected! Bypassing via TrueCaptcha...")
+        site_key = captcha_containers[0].get_attribute("data-sitekey") if captcha_containers else captcha_frames[0].get_attribute("src").split("k=")[1].split("&")[0]
         
-        # Get the sitekey from the container attribute
-        if captcha_containers:
-            site_key = captcha_containers[0].get_attribute("data-sitekey")
-        else:
-            # Fallback parsing from the iframe src query string
-            src = captcha_frames[0].get_attribute("src")
-            site_key = src.split("k=")[1].split("&")[0]
-            
-        print(f"Sending sitekey to TrueCaptcha solver: {site_key}")
-        
-        # 2. SOLVE VIA TRUECAPTCHA API
         captcha_payload = {
-            "userid": TRUE_USER,
-            "apikey": TRUE_KEY,
-            "data": site_key,
-            "pageurl": TARGET_URL,
-            "type": "recaptcha"
+            "userid": TRUE_USER, "apikey": TRUE_KEY, "data": site_key, "pageurl": TARGET_URL, "type": "recaptcha"
         }
-        
         response = requests.post("https://apitruecaptcha.org", json=captcha_payload).json()
         solved_token = response.get("result")
         
-        if not solved_token:
-            raise Exception(f"TrueCaptcha processing failed. API Response: {response}")
-            
-        print("Bypass token retrieved from TrueCaptcha successfully!")
-        
-        # 3. INJECT TOKEN INTO THE RESPONSE FIELDS
-        driver.execute_script(f'document.getElementById("g-recaptcha-response").innerHTML="{solved_token}";')
-        time.sleep(1)
-        
-        # Click verification form button if it exists to refresh/unlock the table
-        verify_btn = driver.find_elements(By.XPATH, "//button[contains(text(), 'Verify')] | //input[@type='submit']")
-        if verify_btn:
-            verify_btn[0].click()
-            print("Token submitted. Waiting for page validation...")
-            time.sleep(5)
+        if solved_token:
+            driver.execute_script(f'document.getElementById("g-recaptcha-response").innerHTML="{solved_token}";')
+            time.sleep(1)
+            verify_btn = driver.find_elements(By.XPATH, "//button[contains(text(), 'Verify')] | //input[@type='submit']")
+            if verify_btn:
+                verify_btn[0].click()
+                time.sleep(5)
     else:
-        print("No CAPTCHA detected on initial load. Proceeding directly to table scraping...")
+        print("No CAPTCHA blocking active. Proceeding straight to table extraction...")
 
-    # 4. DOWNLOAD THE NEWEST DOCUMENT ENTRY
+    # 2. TARGET THE FIRST GENUINE DOWNLOAD LINK ACCURATELY
     print("Locating target results data table...")
     wait = WebDriverWait(driver, 25)
     
-    # Target any available Download links within the main table row body dynamically
-    first_download_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//table//tbody/tr//a[contains(text(), 'Download')]")))
+    # Target the row specifically to read the name column (2nd cell) instead of serial number
+    first_row = wait.until(EC.presence_of_element_located((By.XPATH, "//table//tbody/tr[1]")))
     
-    # Grab row info text for cleaner file tracking names
-    draw_details = driver.find_element(By.XPATH, "//table//tbody/tr/td[1]").text
-    print(f"Targeting active published document: {draw_details}")
+    # Extract the descriptive name (e.g., KARUNYA PLUS (KN-644))
+    draw_name = first_row.find_element(By.XPATH, "./td[2]").text
+    print(f"Targeting active published document: {draw_name}")
     
-    first_download_btn.click()
-    print("Download action triggered. Waiting for download tracking window buffer...")
-    time.sleep(20) # Buffer to let the PDF completely write to disk inside the cloud virtual machine
+    # Specific click to target only the 'Download' text link element inside the row
+    download_link = first_row.find_element(By.XPATH, ".//a[contains(text(), 'Download')]")
+    
+    # Use JavaScript click execution to override headless background blocking bugs
+    driver.execute_script("arguments[0].click();", download_link)
+    print("Download action triggered via JS. Waiting for file write buffer...")
+    time.sleep(20)
 
-    # 5. RENAME AND FINALIZE ASSETS
+    # 3. VERIFY ARCHIVE AND FINALIZE
     downloaded_files = os.listdir(DOWNLOAD_DIR)
-    # Filter out empty files or incomplete crdownload tracks
     valid_files = [f for f in downloaded_files if not f.endswith('.crdownload') and f != "error_screenshot.png"]
     
     if valid_files:
         filename = valid_files[0]
         old_path = os.path.join(DOWNLOAD_DIR, filename)
-        clean_name = f"{draw_details.replace('/', '-')}.pdf"
+        
+        # Formulate a clean filename using the parsed draw name
+        clean_name = f"{draw_name.replace('/', '-')}.pdf"
         new_path = os.path.join(DOWNLOAD_DIR, clean_name)
+        
         os.rename(old_path, new_path)
         print(f"Asset synchronized successfully: {clean_name}")
     else:
@@ -117,7 +102,6 @@ try:
 
 except Exception as error:
     print(f"Automation execution blocked: {str(error)}")
-    # Take an updated picture snapshot of the block for debug audits
     driver.save_screenshot(os.path.join(DOWNLOAD_DIR, "error_screenshot.png"))
     raise error
 

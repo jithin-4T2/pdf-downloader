@@ -31,7 +31,7 @@ chrome_options.add_experimental_option("prefs", {
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-# Enable headless download capability using Chrome DevTools Protocol
+# Enable download capability in Headless Chrome
 driver.execute_cdp_cmd(
     "Page.setDownloadBehavior",
     {"behavior": "allow", "downloadPath": DOWNLOAD_DIR}
@@ -48,49 +48,42 @@ try:
     # -------------------------------------------------------------
     print("Waiting for math equation verification pop-up...")
     
-    # Locate answer input field inside the modal overlay
-    input_box = wait.until(EC.visibility_of_element_located(
-        (By.XPATH, "//input[@placeholder='Enter your answer']")
+    # Broadened locator to catch the input box regardless of minor attribute variations
+    input_box = wait.until(EC.presence_of_element_located(
+        (By.XPATH, "//input[contains(translate(@placeholder, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'answer') or @type='number' or @type='text']")
     ))
-    print("Math CAPTCHA input located.")
+    print("Math CAPTCHA input element located.")
     
-    # Extract modal text containing the math expression (e.g., '2 * 10')
-    modal_element = driver.find_element(
-        By.XPATH, "//div[contains(@class, 'modal')] | //body"
-    )
-    modal_text = modal_element.text
-    print(f"Modal text extracted: {modal_text}")
+    # Ensure element is visible before interacting
+    wait.until(EC.visibility_of(input_box))
+    
+    # Extract page or modal text containing the math problem
+    page_text = driver.find_element(By.TAG_NAME, "body").text
 
-    # Extract two numbers and math operator using regex
-    match = re.search(r'(\d+)\s*([\+\-\*\/xX])\s*(\d+)', modal_text)
+    # Match equation pattern (e.g. "2 * 10" or "5 + 3")
+    match = re.search(r'(\d+)\s*([\+\-\*\/xX])\s*(\d+)', page_text)
     if match:
         num1, op, num2 = int(match.group(1)), match.group(2), int(match.group(3))
-        if op in ('*', 'x', 'X'):
-            result = num1 * num2
-        elif op == '+':
-            result = num1 + num2
-        elif op == '-':
-            result = num1 - num2
-        elif op == '/':
-            result = num1 // num2
-        print(f"Parsed equation: {num1} {op} {num2} = {result}")
+        if op in ('*', 'x', 'X'): result = num1 * num2
+        elif op == '+': result = num1 + num2
+        elif op == '-': result = num1 - num2
+        elif op == '/': result = num1 // num2
+        print(f"Detected and calculated equation: {num1} {op} {num2} = {result}")
     else:
-        raise ValueError("Failed to extract valid math equation from modal text.")
+        raise ValueError(f"Could not parse equation from text: {page_text[:200]}")
         
-    # Input answer and submit
+    # Enter answer and submit
     input_box.clear()
     input_box.send_keys(str(result))
     
     submit_btn = driver.find_element(
-        By.XPATH, "//button[contains(text(), 'Submit') or @type='submit']"
+        By.XPATH, "//button[contains(translate(text(), 'SUBMIT', 'submit'), 'submit') or @type='submit']"
     )
     submit_btn.click()
     print("Math CAPTCHA answer submitted.")
     
-    # Wait for the modal backdrop overlay to completely close
-    wait.until(EC.invisibility_of_element_located(
-        (By.XPATH, "//input[@placeholder='Enter your answer']")
-    ))
+    # Wait for the input box/modal to close
+    wait.until(EC.staleness_of(input_box) if False else EC.invisibility_of_element(input_box))
     print("Modal successfully closed.")
 
     # -------------------------------------------------------------
@@ -105,9 +98,8 @@ try:
     draw_name = first_row.find_element(By.XPATH, "./td[2]").text.strip()
     print(f"Targeting latest result file: {draw_name}")
     
-    # Click download link for row 1
     download_link = first_row.find_element(
-        By.XPATH, ".//a[contains(text(), 'Download')] | .//button[contains(text(), 'Download')]"
+        By.XPATH, ".//a[contains(translate(text(), 'DOWNLOAD', 'download'), 'download')] | .//button[contains(translate(text(), 'DOWNLOAD', 'download'), 'download')]"
     )
     driver.execute_script("arguments[0].click();", download_link)
     

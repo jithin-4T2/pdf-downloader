@@ -12,7 +12,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 TRUE_USER = os.environ.get("4t2industries@gmail.com")
 TRUE_KEY = os.environ.get("zNpEm0GDWNlWBhSxYDsZ")
 
-TARGET_URL = "https://www.lotteryagent.kerala.gov.in/result/public/"
+TARGET_URL = "https://www.lotteryagent.kerala.gov.in/result/public/#"
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "lottery_results")
 
 if not os.path.exists(DOWNLOAD_DIR):

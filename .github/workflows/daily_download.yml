@@ -2,9 +2,8 @@ name: Kerala Lottery Direct Repository Saver
 
 on:
   schedule:
-    # Runs daily at 4:30 PM Indian Standard Time (11:00 AM UTC)
     - cron: '0 11 * * *'
-  workflow_dispatch: # Allows manual button click activation
+  workflow_dispatch:
 
 jobs:
   run-downloader:
@@ -21,23 +20,25 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        pip install selenium webdriver-manager
+        pip install selenium webdriver-manager requests
 
     - name: Run Downloader Script
+      env:
+        TRUECAPTCHA_USER_ID: ${{ secrets.TRUECAPTCHA_USER_ID }}
+        TRUECAPTCHA_API_KEY: ${{ secrets.TRUECAPTCHA_API_KEY }}
       run: python download_pdf.py
 
-    - name: Commit and Push PDF to Repository
+    - name: Commit and Push Assets to Repository
       run: |
         git config --global user.name "GitHub Action Bot"
         git config --global user.email "actions@github.com"
         
-        # Add the downloaded file to Git tracking
-        git add lottery_results/*.pdf
+        # Add files safely even if an operational layout debug snapshot is captured
+        git add lottery_results/*
         
-        # Check if there are actual changes before committing to avoid errors
         if git diff --staged --quiet; then
-          echo "No new lottery result found today."
+          echo "No new document generation detected today."
         else
-          git commit -m "Automated Sync: Added latest Kerala Lottery PDF"
+          git commit -m "Automated Sync: Updated target Kerala Lottery file library"
           git push
         fi

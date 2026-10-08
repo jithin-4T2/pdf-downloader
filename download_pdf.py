@@ -12,7 +12,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 TRUE_USER = os.environ.get("4t2industries@gmail.com")
 TRUE_KEY = os.environ.get("zNpEm0GDWNlWBhSxYDsZ")
 
-TARGET_URL = "https://www.lotteryagent.kerala.gov.in/result/public/#"
+TARGET_URL = "https://kerala.gov.in"
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "lottery_results")
 
 if not os.path.exists(DOWNLOAD_DIR):
@@ -24,7 +24,7 @@ chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--window-size=1920,1080")
 
-# Enforce explicit configurations to capture PDF binary targets on headless servers
+# Set up browser settings to automatically download PDFs instead of opening them
 chrome_options.add_experimental_option("prefs", {
     "download.default_directory": DOWNLOAD_DIR,
     "download.prompt_for_download": False,
@@ -38,7 +38,7 @@ driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), opti
 try:
     print("Connecting to the Kerala LOTIS portal...")
     driver.get(TARGET_URL)
-    time.sleep(12)  # Generous layout sleep for virtual instances
+    time.sleep(12)  # Give the web page layout plenty of time to populate
     
     # 1. OPTIONAL DEFENSTIVE CAPTCHA CHECKER
     captcha_frames = driver.find_elements(By.XPATH, "//iframe[contains(@src, 'recaptcha')]")
@@ -66,22 +66,22 @@ try:
 
     # 2. ISOLATE TARGET ROW ELEMENT STABLY
     print("Locating target data frames...")
-    wait = WebDriverWait(driver, 35) # Expanded fallback tolerance window
+    wait = WebDriverWait(driver, 35)
     
-    # Target the exact table body row structural layout element defensively
-    first_row_xpath = "//table/tbody/tr["
+    # FIX: Corrected the broken XPath syntax by closing it properly
+    first_row_xpath = "//table/tbody/tr[1]"
     first_row = wait.until(EC.presence_of_element_located((By.XPATH, first_row_xpath)))
     
-    # Extract structural lottery draw definition name data (2nd Column cell item)
+    # Extract the descriptive name (from the 2nd column cell item)
     draw_name = first_row.find_element(By.XPATH, "./td").text
     print(f"Targeting active published document title: {draw_name}")
     
-    # Specific click routine isolated onto the row action hyperlink item
+    # Locate the Download link within this top row
     download_link = first_row.find_element(By.XPATH, ".//a[contains(text(), 'Download')]")
     
-    # Native JS trigger prevents headless context rendering element collision errors
+    # Use JavaScript click to reliably trigger the browser's download event
     driver.execute_script("arguments.click();", download_link)
-    print("Download action deployed. Streaming PDF content directly onto server disk matrix...")
+    print("Download action deployed. Streaming PDF content directly onto server disk...")
     time.sleep(25)
 
     # 3. VERIFY OUTPUT DIRECTORY FILES
@@ -92,7 +92,7 @@ try:
         filename = valid_files
         old_path = os.path.join(DOWNLOAD_DIR, filename)
         
-        # Format filename clean without slash dividers
+        # Format the file name cleanly (e.g., replacing slashes)
         clean_name = f"{draw_name.replace('/', '-')}.pdf"
         new_path = os.path.join(DOWNLOAD_DIR, clean_name)
         

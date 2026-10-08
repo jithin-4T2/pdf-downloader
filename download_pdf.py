@@ -16,7 +16,7 @@ if not os.path.exists(DOWNLOAD_DIR):
 
 # Configure Headless Chrome options
 chrome_options = webdriver.ChromeOptions()
-chrome_options.add_argument("--headless=new") 
+chrome_options.add_argument("--headless=new")
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--window-size=1920,1080")
@@ -30,6 +30,13 @@ chrome_options.add_experimental_option("prefs", {
 })
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+
+# Enable headless downloads via CDP command (essential for CI/CD like GitHub Actions)
+driver.execute_cdp_cmd(
+    "Page.setDownloadBehavior",
+    {"behavior": "allow", "downloadPath": DOWNLOAD_DIR}
+)
+
 wait = WebDriverWait(driver, 20)
 
 try:
@@ -41,31 +48,35 @@ try:
     # -------------------------------------------------------------
     print("Waiting for math equation verification pop-up...")
     try:
-        # Wait for the input box inside the modal
+        # Wait for input field in the modal
         input_box = wait.until(EC.visibility_of_element_located(
-            (By.XPATH, "//input[@placeholder='Enter your answer' or @type='number']")
+            (By.XPATH, "//input[@placeholder='Enter your answer']")
         ))
         print("Math CAPTCHA detected.")
         
-        # Locate the math equation text node
-        equation_element = driver.find_element(
-            By.XPATH, "//input[@placeholder='Enter your answer']/preceding-sibling::*[1] | //*[contains(text(), '*') or contains(text(), '+') or contains(text(), '-')]"
-        )
+        # Locate the math equation element reliably inside the modal
+        equation_element = wait.until(EC.visibility_of_element_located(
+            (By.XPATH, "//div[contains(@class, 'modal')]//*[contains(text(), '*')] | //div[contains(@class, 'modal')]//*[contains(text(), '+')] | //*[contains(text(), 'Please solve the equation')]/following-sibling::*")
+        ))
+        
+        # Fallback if specific xpath element isn't isolated: grab text from the whole modal body
         equation_text = equation_element.text.strip()
+        if not equation_text:
+            modal_body = driver.find_element(By.XPATH, "//div[contains(@class, 'modal')] | //body")
+            equation_text = modal_body.text
+
         print(f"Extracted puzzle text: {equation_text}")
 
-        # Extract numbers and operator cleanly using regex
-        match = re.search(r'(\d+)\s*([\+\-\*\/])\s*(\d+)', equation_text)
+        # Extract numbers and arithmetic operator using regex
+        match = re.search(r'(\d+)\s*([\+\-\*\/xX])\s*(\d+)', equation_text)
         if match:
             num1, op, num2 = int(match.group(1)), match.group(2), int(match.group(3))
-            if op == '*': result = num1 * num2
+            if op in ('*', 'x', 'X'): result = num1 * num2
             elif op == '+': result = num1 + num2
             elif op == '-': result = num1 - num2
             elif op == '/': result = num1 // num2
         else:
-            # Fallback evaluation
-            clean_eq = equation_text.replace('x', '*').replace(' ', '')
-            result = eval(clean_eq)
+            raise ValueError(f"Could not parse equation from string: '{equation_text}'")
             
         print(f"Calculated answer: {result}")
         
@@ -74,30 +85,28 @@ try:
         input_box.send_keys(str(result))
         
         submit_btn = driver.find_element(
-            By.XPATH, "//button[contains(text(), 'Submit')] | //button[@type='submit']"
+            By.XPATH, "//button[contains(text(), 'Submit') or @type='submit']"
         )
         submit_btn.click()
         print("Math response submitted.")
         
-        # Wait briefly for modal overlay to disappear
-        time.sleep(2)
+        # Ensure modal disappears completely before proceeding
+        wait.until(EC.invisibility_of_element_located((By.XPATH, "//input[@placeholder='Enter your answer']")))
+        print("Modal successfully closed.")
         
     except Exception as modal_error:
-        print(f"Modal check bypassed/skipped: {str(modal_error)}")
+        print(f"Modal handling error: {str(modal_error)}")
 
     # -------------------------------------------------------------
     # 2. ISOLATE DOWNLOAD MECHANICS & TRIGGER DOWNLOAD
     # -------------------------------------------------------------
     print("Locating target results data table rows...")
     
-    # Wait for the table row to be interactive
     first_row = wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody/tr[1]")))
     
-    # Get Draw Name from the 2nd column
     draw_name = first_row.find_element(By.XPATH, "./td[2]").text.strip()
     print(f"Targeting published document: {draw_name}")
     
-    # Click download link
     download_link = first_row.find_element(By.XPATH, ".//a[contains(text(), 'Download')] | .//button[contains(text(), 'Download')]")
     driver.execute_script("arguments[0].click();", download_link)
     
@@ -106,14 +115,12 @@ try:
     # -------------------------------------------------------------
     # 3. VERIFY AND RENAME DOWNLOADED FILE
     # -------------------------------------------------------------
-    # Wait dynamically for download completion (up to 30 seconds)
     download_timeout = 30
     downloaded_file = None
     
     start_time = time.time()
     while time.time() - start_time < download_timeout:
         files = os.listdir(DOWNLOAD_DIR)
-        # Filter out incomplete downloads and screenshot files
         completed_files = [
             f for f in files 
             if not f.endswith('.crdownload') 
@@ -127,8 +134,6 @@ try:
 
     if downloaded_file:
         old_path = os.path.join(DOWNLOAD_DIR, downloaded_file)
-        
-        # Sanitize filename for operating system compatibility
         safe_draw_name = re.sub(r'[\\/*?:"<>|]', '-', draw_name)
         clean_name = f"{safe_draw_name}.pdf"
         new_path = os.path.join(DOWNLOAD_DIR, clean_name)

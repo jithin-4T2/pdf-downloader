@@ -31,7 +31,7 @@ chrome_options.add_experimental_option("prefs", {
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-# Enable download capability in Headless Chrome
+# Allow downloads in Headless mode via CDP
 driver.execute_cdp_cmd(
     "Page.setDownloadBehavior",
     {"behavior": "allow", "downloadPath": DOWNLOAD_DIR}
@@ -44,35 +44,49 @@ try:
     driver.get(TARGET_URL)
     
     # -------------------------------------------------------------
-    # 1. SOLVE MATH CAPTCHA POP-UP
+    # 1. TRIGGER DOWNLOAD TO OPEN MATH CAPTCHA MODAL
     # -------------------------------------------------------------
-    print("Waiting for math equation verification pop-up...")
-    
-    # Broadened locator to catch the input box regardless of minor attribute variations
-    input_box = wait.until(EC.presence_of_element_located(
-        (By.XPATH, "//input[contains(translate(@placeholder, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'answer') or @type='number' or @type='text']")
+    print("Locating latest results row (Row 1)...")
+    first_row = wait.until(EC.presence_of_element_located(
+        (By.XPATH, "//table/tbody/tr[1]")
     ))
-    print("Math CAPTCHA input element located.")
     
-    # Ensure element is visible before interacting
-    wait.until(EC.visibility_of(input_box))
+    draw_name = first_row.find_element(By.XPATH, "./td[2]").text.strip()
+    print(f"Targeting latest result: {draw_name}")
     
-    # Extract page or modal text containing the math problem
-    page_text = driver.find_element(By.TAG_NAME, "body").text
+    # Click initial Download button to trigger the modal
+    download_btn = first_row.find_element(
+        By.XPATH, ".//a[contains(translate(text(), 'DOWNLOAD', 'download'), 'download')] | .//button[contains(translate(text(), 'DOWNLOAD', 'download'), 'download')]"
+    )
+    driver.execute_script("arguments[0].click();", download_btn)
+    print("Download button clicked. Waiting for math CAPTCHA modal...")
 
-    # Match equation pattern (e.g. "2 * 10" or "5 + 3")
-    match = re.search(r'(\d+)\s*([\+\-\*\/xX])\s*(\d+)', page_text)
+    # -------------------------------------------------------------
+    # 2. DETECT AND SOLVE MATH CAPTCHA
+    # -------------------------------------------------------------
+    input_box = wait.until(EC.visibility_of_element_located(
+        (By.XPATH, "//input[contains(translate(@placeholder, 'ANSWER', 'answer'), 'answer') or @type='number' or @type='text']")
+    ))
+    print("Math CAPTCHA input field detected.")
+
+    # Grab equation text from modal
+    modal_element = driver.find_element(By.XPATH, "//div[contains(@class, 'modal')] | //body")
+    modal_text = modal_element.text
+    print(f"Modal text captured: {modal_text}")
+
+    # Extract numbers and operator (e.g. 2 * 10)
+    match = re.search(r'(\d+)\s*([\+\-\*\/xX])\s*(\d+)', modal_text)
     if match:
         num1, op, num2 = int(match.group(1)), match.group(2), int(match.group(3))
         if op in ('*', 'x', 'X'): result = num1 * num2
         elif op == '+': result = num1 + num2
         elif op == '-': result = num1 - num2
         elif op == '/': result = num1 // num2
-        print(f"Detected and calculated equation: {num1} {op} {num2} = {result}")
+        print(f"Solved equation: {num1} {op} {num2} = {result}")
     else:
-        raise ValueError(f"Could not parse equation from text: {page_text[:200]}")
-        
-    # Enter answer and submit
+        raise ValueError(f"Unable to extract math expression from modal: {modal_text}")
+
+    # Input answer and submit form
     input_box.clear()
     input_box.send_keys(str(result))
     
@@ -80,31 +94,8 @@ try:
         By.XPATH, "//button[contains(translate(text(), 'SUBMIT', 'submit'), 'submit') or @type='submit']"
     )
     submit_btn.click()
-    print("Math CAPTCHA answer submitted.")
-    
-    # Wait for the input box/modal to close
-    wait.until(EC.staleness_of(input_box) if False else EC.invisibility_of_element(input_box))
-    print("Modal successfully closed.")
+    print("Captcha answer submitted. File download started...")
 
-    # -------------------------------------------------------------
-    # 2. TRIGGER LATEST FILE DOWNLOAD
-    # -------------------------------------------------------------
-    print("Locating latest results row (Row 1)...")
-    
-    first_row = wait.until(EC.presence_of_element_located(
-        (By.XPATH, "//table/tbody/tr[1]")
-    ))
-    
-    draw_name = first_row.find_element(By.XPATH, "./td[2]").text.strip()
-    print(f"Targeting latest result file: {draw_name}")
-    
-    download_link = first_row.find_element(
-        By.XPATH, ".//a[contains(translate(text(), 'DOWNLOAD', 'download'), 'download')] | .//button[contains(translate(text(), 'DOWNLOAD', 'download'), 'download')]"
-    )
-    driver.execute_script("arguments[0].click();", download_link)
-    
-    print("Download action triggered. Waiting for PDF file write...")
-    
     # -------------------------------------------------------------
     # 3. VERIFY AND RENAME PDF
     # -------------------------------------------------------------
@@ -132,7 +123,7 @@ try:
         new_path = os.path.join(DOWNLOAD_DIR, clean_name)
         
         os.rename(old_path, new_path)
-        print(f"Latest PDF downloaded and saved to: {new_path}")
+        print(f"Successfully downloaded and saved: {new_path}")
     else:
         raise Exception("Download failed: No completed PDF found in download directory.")
 

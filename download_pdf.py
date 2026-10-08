@@ -1,4 +1,3 @@
-import python
 import os
 import time
 import requests
@@ -9,7 +8,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-TARGET_URL = "https://kerala.gov.in"
+TARGET_URL = "https://www.lotteryagent.kerala.gov.in/result/public/"
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "lottery_results")
 
 if not os.path.exists(DOWNLOAD_DIR):
@@ -30,7 +29,7 @@ chrome_options.add_experimental_option("prefs", {
 })
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-wait = WebDriverWait(driver, 20)
+wait = WebDriverWait(driver, 25)
 
 try:
     print("Connecting to the Kerala LOTIS portal...")
@@ -44,7 +43,6 @@ try:
         print("Math CAPTCHA pop-up detected successfully.")
         
         # Locate the math equation text node relative to the input field box
-        # Using a reliable relative path to grab the mathematical expression text block
         equation_element = driver.find_element(By.XPATH, "//input[contains(@placeholder, 'answer')]/parent::div/preceding-sibling::div | //*[contains(text(), '* ') or contains(text(), ' + ') or contains(text(), ' - ')]")
         equation_text = equation_element.text.strip()
         
@@ -52,7 +50,7 @@ try:
         clean_equation = equation_text.replace(' ', '').replace('x', '*').strip()
         print(f"Extracted math puzzle text: {clean_equation}")
         
-        # Dynamically evaluate the math operations
+        # Dynamically evaluate the math operations safely
         if '*' in clean_equation:
             num1, num2 = clean_equation.split('*')
             result = int(num1) * int(num2)
@@ -63,7 +61,6 @@ try:
             num1, num2 = clean_equation.split('-')
             result = int(num1) - int(num2)
         else:
-            # Fallback evaluation parser if equation formatting changes slightly
             result = eval(clean_equation)
             
         print(f"Calculated arithmetic target solution response: {result}")
@@ -79,7 +76,7 @@ try:
         time.sleep(5)
         
     except Exception as modal_error:
-        print(f"Modal validation bypass check pass or skipped: {str(modal_error)}")
+        print(f"Modal validation bypass check passed or skipped: {str(modal_error)}")
 
     # 2. ISOLATE DOWNLOAD MECHANICS TARGETS
     print("Locating target results data table rows...")
@@ -87,10 +84,8 @@ try:
     # Target the first structural table row element item cleanly
     first_row = wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody/tr")))
     
-    # Safely pull description string from the second data cell column location to rename cleanly
-    # (Extracting text column cell context to avoid blank index strings)
-    cells = first_row.find_elements(By.XPATH, "./td")
-    draw_name = cells[1].text if len(cells) > 1 else cells[0].text
+    # FIX: Point explicitly to the SECOND column cell (td[2]) to capture the Draw name text accurately
+    draw_name = first_row.find_element(By.XPATH, "./td[2]").text
     print(f"Targeting active published document title: {draw_name}")
     
     download_link = first_row.find_element(By.XPATH, ".//a[contains(text(), 'Download')]")
@@ -104,7 +99,7 @@ try:
     valid_files = [f for f in downloaded_files if not f.endswith('.crdownload') and f != "error_screenshot.png"]
     
     if valid_files:
-        filename = valid_files[0]
+        filename = valid_files
         old_path = os.path.join(DOWNLOAD_DIR, filename)
         clean_name = f"{draw_name.replace('/', '-')}.pdf"
         new_path = os.path.join(DOWNLOAD_DIR, clean_name)

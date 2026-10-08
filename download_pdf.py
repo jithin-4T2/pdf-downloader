@@ -1,6 +1,5 @@
 import os
 import time
-import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -8,11 +7,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-# --- SECURE API TOKENS FROM SECRETS ENV ---
-TRUE_USER = os.environ.get("4t2industries@gmail.com")
-TRUE_KEY = os.environ.get("zNpEm0GDWNlWBhSxYDsZ")
-
-TARGET_URL = "https://www.lotteryagent.kerala.gov.in/result/public/"
+TARGET_URL = "https://kerala.gov.in"
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "lottery_results")
 
 if not os.path.exists(DOWNLOAD_DIR):
@@ -37,60 +32,77 @@ driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), opti
 try:
     print("Connecting to the Kerala LOTIS portal...")
     driver.get(TARGET_URL)
-    time.sleep(12)
+    time.sleep(10)  # Wait for page elements to load
     
-    # 1. DYNAMIC CAPTCHA INTERACTION LAYER
-    captcha_frames = driver.find_elements(By.XPATH, "//iframe[contains(@src, 'recaptcha')]")
-    captcha_containers = driver.find_elements(By.CLASS_NAME, "g-recaptcha")
+    # 1. DETECT AND AUTOMATICALLY SOLVE THE MATH CAPTCHA POP-UP
+    print("Checking for math equation verification pop-up...")
     
-    if captcha_frames or captcha_containers:
-        print("CAPTCHA grid layout detected. Querying TrueCaptcha API credentials...")
-        site_key = captcha_containers.get_attribute("data-sitekey") if captcha_containers else captcha_frames.get_attribute("src").split("k=").split("&")
+    # Search for text elements containing typical equation indicator structures
+    equation_elements = driver.find_elements(By.XPATH, "//*[contains(text(), '*') or contains(text(), '+') or contains(text(), '-')]")
+    
+    # Target the modal specific elements visible in your screenshot
+    modal_present = driver.find_elements(By.XPATH, "//*[contains(text(), 'solve the equation')]")
+    
+    if modal_present:
+        print("Math CAPTCHA pop-up confirmed active.")
         
-        captcha_payload = {
-            "userid": TRUE_USER, "apikey": TRUE_KEY, "data": site_key, "pageurl": TARGET_URL, "type": "recaptcha"
-        }
-        response = requests.post("https://apitruecaptcha.org", json=captcha_payload).json()
-        solved_token = response.get("result")
+        # Isolate the exact equation text string element dynamically
+        # Finds the text node sitting right above the text input field box
+        equation_text = driver.find_element(By.XPATH, "//input[@placeholder='Enter your answer']/preceding-sibling::* | //input/parent::div/preceding-sibling::*").text
         
-        if solved_token:
-            driver.execute_script(f'document.getElementById("g-recaptcha-response").innerHTML="{solved_token}";')
-            time.sleep(2)
-            verify_btn = driver.find_elements(By.XPATH, "//button[contains(text(), 'Verify')] | //input[@type='submit']")
-            if verify_btn:
-                verify_btn.click()
-                time.sleep(6)
-    else:
-        print("No dynamic verification screen found. Accessing dynamic table rows directly...")
+        # Cleanup string formatting spaces or cross symbols if present
+        clean_equation = equation_text.replace(' ', '').replace('x', '*').strip()
+        print(f"Extracted equation text from page layout: {clean_equation}")
+        
+        # Safely evaluate the arithmetic math problem mathematically
+        if '*' in clean_equation:
+            num1, num2 = clean_equation.split('*')
+            result = int(num1) * int(num2)
+        elif '+' in clean_equation:
+            num1, num2 = clean_equation.split('+')
+            result = int(num1) + int(num2)
+        elif '-' in clean_equation:
+            num1, num2 = clean_equation.split('-')
+            result = int(num1) - int(num2)
+        else:
+            raise Exception(f"Unable to parse custom math structure format: {clean_equation}")
+            
+        print(f"Calculated arithmetic verification response: {result}")
+        
+        # Enter target evaluation numeric string into the input elements box
+        input_box = driver.find_element(By.XPATH, "//input[@placeholder='Enter your answer'] | //input[@type='number']")
+        input_box.send_keys(str(result))
+        time.sleep(1)
+        
+        # Locate the action trigger Submit element button and click it to unlock layout rows
+        submit_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Submit')] | //input[@value='Submit']")
+        submit_btn.click()
+        print("Math solution successfully provided. Waiting for page validation refresh...")
+        time.sleep(5)
 
-    # 2. RUN EXTRACTION AGAINST TARGET DATA COLUMNS DEFINED BY TARGET XPATH
-    print("Parsing table entries...")
+    # 2. ISOLATE DOWNLOAD MECHANICS TARGETS
+    print("Locating target results data table rows...")
     wait = WebDriverWait(driver, 35)
     
-    # Secure the explicit first data entry row element block container safely
-    first_row = wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody/tr[1]")))
+    first_row = wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody/tr")))
     
-    # FIX: Point explicitly to the SECOND column cell (td[2]) to capture the Draw details string name
-    draw_name = first_row.find_element(By.XPATH, "./td[2]").text
+    # Safely pull description string from the second data cell column location
+    draw_name = first_row.find_element(By.XPATH, "./td").text
     print(f"Targeting active published document title: {draw_name}")
     
-    # Target the download interactive link item safely relative inside this row block
     download_link = first_row.find_element(By.XPATH, ".//a[contains(text(), 'Download')]")
     
-    # Trigger interaction sequence via native JavaScript execute commands
     driver.execute_script("arguments.click();", download_link)
-    print("Download action deployed. Streaming PDF onto background storage directory...")
+    print("Download action deployed. Streaming PDF onto background workspace layout folder...")
     time.sleep(25)
 
-    # 3. LOCATE TARGET AND RENAME
+    # 3. VERIFY DISK DIRECTORY ASSETS
     downloaded_files = os.listdir(DOWNLOAD_DIR)
     valid_files = [f for f in downloaded_files if not f.endswith('.crdownload') and f != "error_screenshot.png"]
     
     if valid_files:
         filename = valid_files
         old_path = os.path.join(DOWNLOAD_DIR, filename)
-        
-        # Clean formatting expression to remove unsafe file special separator symbols
         clean_name = f"{draw_name.replace('/', '-')}.pdf"
         new_path = os.path.join(DOWNLOAD_DIR, clean_name)
         

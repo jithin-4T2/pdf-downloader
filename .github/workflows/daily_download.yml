@@ -2,9 +2,13 @@ name: Kerala Lottery Direct Repository Saver
 
 on:
   schedule:
-    # 4:40 PM IST corresponds to 11:10 AM UTC (Cron format: minute hour day month day-of-week)
-    - cron: '10 11 * * *'
+    # 6:53 PM IST corresponds to 1:23 PM UTC (Cron format: minute hour day month day-of-week)
+    - cron: '23 13 * * *'
   workflow_dispatch:
+
+# Grant write permissions to allow pushing commits back to the repo
+permissions:
+  contents: write
 
 jobs:
   run-downloader:
@@ -19,23 +23,31 @@ jobs:
       with:
         python-version: '3.10'
 
+    - name: Install Google Chrome
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget
+        wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+        sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
+
     - name: Install Dependencies
       run: |
         pip install selenium webdriver-manager requests
 
+    - name: Ensure Output Directory Exists
+      run: |
+        mkdir -p lottery_results
+
     - name: Run Downloader Script
-      env:
-        TRUECAPTCHA_USER_ID: ${{ secrets.TRUECAPTCHA_USER_ID }}
-        TRUECAPTCHA_API_KEY: ${{ secrets.TRUECAPTCHA_API_KEY }}
       run: python download_pdf.py
 
     - name: Commit and Push Assets to Repository
       run: |
-        git config --global user.name "GitHub Action Bot"
-        git config --global user.email "actions@github.com"
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
         
-        # Add downloaded PDF results
-        git add lottery_results/*
+        # Track generated PDF artifacts
+        git add lottery_results/*.pdf || true
         
         if git diff --staged --quiet; then
           echo "No new document generation detected today."

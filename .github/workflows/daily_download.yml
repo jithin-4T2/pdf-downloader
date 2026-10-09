@@ -27,7 +27,7 @@ jobs:
 
       - name: Run Scraper Script
         run: |
-          python   # Replace with the actual filename of your script
+          python download_pdf.py  # Replace with the actual filename of your script
 
       - name: Upload PDF Artifacts
         uses: actions/upload-artifact@v4

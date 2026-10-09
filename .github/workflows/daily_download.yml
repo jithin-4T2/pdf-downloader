@@ -3,7 +3,7 @@ name: Kerala Lottery Direct Repository Saver
 on:
   schedule:
     # 6:53 PM IST corresponds to 1:23 PM UTC (Cron format: minute hour day month day-of-week)
-    - cron: '23 13 * * *'
+    - cron: '27 13 * * *'
   workflow_dispatch:
 
 # Grant write permissions to allow pushing commits back to the repo

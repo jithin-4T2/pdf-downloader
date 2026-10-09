@@ -2,8 +2,8 @@ name: Daily Kerala Lottery Result Scraper
 
 on:
   schedule:
-    # 1:40 PM UTC corresponds to 7:10 PM IST (UTC+5:30)
-    - cron: '40 13 * * *'
+    # 2:30 PM UTC corresponds to 8:00 PM IST (UTC+5:30)
+    - cron: '30 14 * * *'
   # Allows manual triggering from the GitHub Actions tab
   workflow_dispatch:
 
@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/python-101@v5 # Replace with actions/setup-python@v5 if needed
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -27,7 +27,7 @@ jobs:
 
       - name: Run Scraper Script
         run: |
-          python download_pdf.py  # Replace with the actual filename of your script
+          python download_pdf.py  # Replace with your actual script filename
 
       - name: Upload PDF Artifacts
         uses: actions/upload-artifact@v4
